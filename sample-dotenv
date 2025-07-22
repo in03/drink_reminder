@@ -1,0 +1,30 @@
+# Drink Reminder Configuration
+REMINDER_TIMER_MINUTES=45
+RANDOM_THRESHOLD_MINUTES=5
+
+# Weight thresholds (in grams)
+MIN_WEIGHT=710
+MAX_WEIGHT=1810
+EMPTY_THRESHOLD=50
+VERY_EMPTY_THRESHOLD=10
+FILL_THRESHOLD_PERCENT=10
+DRINK_CORRECTION_THRESHOLD=10
+
+# Daily hydration goal (milliliters, 1ml = 1g for water)
+DAILY_GOAL_IN_ML=2000
+
+# Hydration time window (24-hour format)
+HYDRATION_START_HOUR=7
+HYDRATION_END_HOUR=22
+
+# Reasonable hydration rate (ml per hour during active window)
+REASONABLE_ML_PER_HOUR=130
+
+# Timer intervals (in minutes)
+BAD_ORIENTATION_INTERVAL=10
+EMPTY_REMINDER_INTERVAL=10
+RECALIBRATE_REMINDER_DAYS=2
+MIN_TIMER_GAP_MINUTES=1
+
+# Orientation threshold (degrees from vertical)
+ORIENTATION_THRESHOLD=10 
