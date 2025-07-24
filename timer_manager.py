@@ -188,20 +188,30 @@ class TimerManager:
             print("⏰ Timer manager started successfully")
     
     async def stop(self):
-        """Stop the timer manager"""
+        """Stop the timer manager and cleanup resources"""
+        print("Timer loop cancelled")
         self._running = False
         
         # Save final state
         self._save_timer_states()
         
-        # Cancel tasks
+        # Cancel and cleanup tasks properly
+        tasks_to_cleanup = []
         for task in [self._task, self._save_task]:
-            if task:
+            if task and not task.done():
+                tasks_to_cleanup.append(task)
                 task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
+        
+        # Wait for all tasks to complete cancellation
+        if tasks_to_cleanup:
+            try:
+                await asyncio.wait(tasks_to_cleanup, timeout=2.0)
+            except asyncio.TimeoutError:
+                print("Warning: Some timer tasks didn't cancel within timeout")
+            
+        # Clear task references
+        self._task = None
+        self._save_task = None
     
     def _save_timer_states(self):
         """Save current timer states to storage"""

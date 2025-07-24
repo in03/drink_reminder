@@ -1,6 +1,10 @@
-# Drink Reminder Configuration
-REMINDER_TIMER_MINUTES=45
+# Drink Reminder Configuration - Dynamic intervals based on dehydration
+DRINK_REMINDER_BASE=45           # Starting reminder interval for neutral hydration (minutes)
+DRINK_REMINDER_LIMIT=10          # Minimum reminder interval for severely dehydrated (minutes)
 RANDOM_THRESHOLD_MINUTES=5
+
+# Legacy static reminder (kept for compatibility but will be replaced by dynamic system)
+REMINDER_TIMER_MINUTES=45
 
 # Weight thresholds (in grams)
 MIN_WEIGHT=710
