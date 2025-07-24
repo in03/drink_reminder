@@ -48,7 +48,16 @@ class PersistentStorage:
             self._write_json(self.app_state_file, {
                 "app_start_time": None,
                 "last_shutdown_time": None,
-                "event_counts": {}
+                "event_counts": {},
+                "bottle_weight": None,  # Will be set to default if not saved
+                "daily_consumed_ml": 0.0,
+                "last_daily_reset": None,
+                "lifetime_stats": {
+                    "total_sessions": 0,
+                    "total_ml_consumed": 0.0,
+                    "total_drink_events": 0,
+                    "days_tracked": 0
+                }
             })
     
     def _read_json(self, file_path: Path, default=None):
@@ -123,22 +132,166 @@ class PersistentStorage:
             print(f"Error getting recent events: {e}")
             return []
     
-    def save_app_state(self, app_start_time: datetime, event_counts: Dict[str, int]):
-        """Save application state"""
+    def save_app_state(self, app_start_time: datetime, event_counts: Dict[str, int], bottle_weight: int = None, daily_consumed_ml: float = None, last_daily_reset: str = None):
+        """Save application state including bottle weight and daily consumption"""
+        # Load existing data to preserve other fields
+        existing_data = self.load_app_state()
+        
         data = {
             "app_start_time": app_start_time.isoformat(),
             "last_shutdown_time": datetime.now().isoformat(),
             "event_counts": event_counts
         }
+        
+        # Only update bottle_weight if provided
+        if bottle_weight is not None:
+            data["bottle_weight"] = bottle_weight
+        elif "bottle_weight" in existing_data:
+            data["bottle_weight"] = existing_data["bottle_weight"]
+            
+        # Only update daily consumption if provided
+        if daily_consumed_ml is not None:
+            data["daily_consumed_ml"] = daily_consumed_ml
+        elif "daily_consumed_ml" in existing_data:
+            data["daily_consumed_ml"] = existing_data["daily_consumed_ml"]
+            
+        # Only update last daily reset if provided
+        if last_daily_reset is not None:
+            data["last_daily_reset"] = last_daily_reset
+        elif "last_daily_reset" in existing_data:
+            data["last_daily_reset"] = existing_data["last_daily_reset"]
+            
+        # Initialize lifetime stats if not present
+        if "lifetime_stats" not in existing_data:
+            data["lifetime_stats"] = {
+                "total_sessions": 0,
+                "total_ml_consumed": 0.0,
+                "total_drink_events": 0,
+                "days_tracked": 0
+            }
+        else:
+            data["lifetime_stats"] = existing_data["lifetime_stats"]
+            
         self._write_json(self.app_state_file, data)
+    
+    def save_daily_consumption(self, daily_consumed_ml: float, last_daily_reset: str):
+        """Save just the daily consumption data to app state"""
+        existing_data = self.load_app_state()
+        existing_data["daily_consumed_ml"] = daily_consumed_ml
+        existing_data["last_daily_reset"] = last_daily_reset
+        self._write_json(self.app_state_file, existing_data)
+    
+    def save_bottle_weight(self, bottle_weight: int):
+        """Save just the bottle weight to app state"""
+        existing_data = self.load_app_state()
+        existing_data["bottle_weight"] = bottle_weight
+        self._write_json(self.app_state_file, existing_data)
+    
+    def update_lifetime_stats(self, ml_consumed: float = 0, drink_events: int = 0, new_session: bool = False, new_day: bool = False):
+        """Update lifetime statistics"""
+        existing_data = self.load_app_state()
+        
+        if "lifetime_stats" not in existing_data:
+            existing_data["lifetime_stats"] = {
+                "total_sessions": 0,
+                "total_ml_consumed": 0.0,
+                "total_drink_events": 0,
+                "days_tracked": 0
+            }
+        
+        stats = existing_data["lifetime_stats"]
+        
+        if new_session:
+            stats["total_sessions"] += 1
+        if new_day:
+            stats["days_tracked"] += 1
+        if ml_consumed > 0:
+            stats["total_ml_consumed"] += ml_consumed
+        if drink_events > 0:
+            stats["total_drink_events"] += drink_events
+            
+        existing_data["lifetime_stats"] = stats
+        self._write_json(self.app_state_file, existing_data)
     
     def load_app_state(self) -> Dict[str, Any]:
         """Load application state"""
         return self._read_json(self.app_state_file, {
             "app_start_time": None,
             "last_shutdown_time": None,
-            "event_counts": {}
+            "event_counts": {},
+            "bottle_weight": None,
+            "daily_consumed_ml": 0.0,
+            "last_daily_reset": None,
+            "lifetime_stats": {
+                "total_sessions": 0,
+                "total_ml_consumed": 0.0,
+                "total_drink_events": 0,
+                "days_tracked": 0
+            }
         })
+    
+    def reset_session_data(self, preserve_lifetime_stats: bool = True):
+        """Reset current session data while optionally preserving lifetime statistics
+        
+        Args:
+            preserve_lifetime_stats: If True, keep lifetime stats. If False, reset everything.
+        """
+        try:
+            existing_data = self.load_app_state()
+            
+            # Update lifetime stats with current session before reset
+            if preserve_lifetime_stats and "lifetime_stats" in existing_data:
+                lifetime_stats = existing_data["lifetime_stats"]
+                # If there was daily consumption, add it to lifetime totals
+                if existing_data.get("daily_consumed_ml", 0) > 0:
+                    lifetime_stats["total_ml_consumed"] += existing_data["daily_consumed_ml"]
+                    lifetime_stats["total_drink_events"] += existing_data.get("event_counts", {}).get("drink", 0)
+            else:
+                lifetime_stats = {
+                    "total_sessions": 0,
+                    "total_ml_consumed": 0.0,
+                    "total_drink_events": 0,
+                    "days_tracked": 0
+                }
+            
+            # Reset session data
+            reset_data = {
+                "app_start_time": None,
+                "last_shutdown_time": datetime.now().isoformat(),
+                "event_counts": {},  # Reset all event counts
+                "bottle_weight": existing_data.get("bottle_weight", None),  # Preserve bottle weight
+                "daily_consumed_ml": 0.0,  # Reset daily consumption
+                "last_daily_reset": datetime.now().date().isoformat(),  # Reset to today
+                "lifetime_stats": lifetime_stats if preserve_lifetime_stats else {
+                    "total_sessions": 0,
+                    "total_ml_consumed": 0.0,
+                    "total_drink_events": 0,
+                    "days_tracked": 0
+                }
+            }
+            
+            self._write_json(self.app_state_file, reset_data)
+            
+            # Also reset timer states
+            self._write_json(self.timer_state_file, {})
+            
+            # Clear event log but keep a few recent entries for reference
+            if preserve_lifetime_stats:
+                # Keep last 5 events for context
+                event_data = self._read_json(self.event_log_file, {"events": []})
+                if len(event_data["events"]) > 5:
+                    event_data["events"] = event_data["events"][-5:]
+                self._write_json(self.event_log_file, event_data)
+            else:
+                # Complete reset
+                self._write_json(self.event_log_file, {"events": []})
+            
+            print(f"✅ Session data reset complete. Lifetime stats {'preserved' if preserve_lifetime_stats else 'also reset'}.")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error resetting session data: {e}")
+            return False
     
     def cleanup_old_logs(self, days: int = 30):
         """Remove log entries older than specified days"""

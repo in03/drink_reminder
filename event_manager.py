@@ -23,8 +23,8 @@ class EventManager:
         # Load recent events from storage
         self._load_recent_events()
     
-    def trigger_event(self, event_type: str, data: dict = None, timer_name: str = None) -> Event:
-        """Trigger an event and calculate its severity based on previous occurrences"""
+    def trigger_event(self, event_type: str, data: dict = None, timer_name: str = None, custom_severity: int = None) -> Event:
+        """Trigger an event and calculate its severity based on previous occurrences or custom value"""
         # Get accurate timestamp
         current_time = time_service.get_accurate_time()
         
@@ -34,9 +34,16 @@ class EventManager:
         else:
             count_key = event_type
         
-        # Increment count for this event type (global or per-timer)
-        self.event_counts[count_key] = self.event_counts.get(count_key, 0) + 1
-        severity = self.event_counts[count_key]
+        # Use custom severity if provided (for hydration-level based drink reminders)
+        # Otherwise use count-based severity (for ignored reminder tracking)
+        if custom_severity is not None:
+            severity = custom_severity
+            # Still increment count for tracking purposes, but don't use for severity
+            self.event_counts[count_key] = self.event_counts.get(count_key, 0) + 1
+        else:
+            # Increment count for this event type (global or per-timer)
+            self.event_counts[count_key] = self.event_counts.get(count_key, 0) + 1
+            severity = self.event_counts[count_key]
         
         # Create the event
         event = Event(
@@ -114,7 +121,7 @@ class EventManager:
         """Save current event counts to storage"""
         try:
             current_time = time_service.get_accurate_time()
-            storage.save_app_state(current_time, self.event_counts)
+            storage.save_app_state(current_time, self.event_counts, None)  # Don't update bottle_weight or daily consumption from EventManager
         except Exception as e:
             print(f"Error saving event counts: {e}")
     
