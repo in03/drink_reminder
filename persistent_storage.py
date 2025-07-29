@@ -52,6 +52,7 @@ class PersistentStorage:
                 "bottle_weight": None,  # Will be set to default if not saved
                 "daily_consumed_ml": 0.0,
                 "last_daily_reset": None,
+                "config_overrides": {},  # Configuration overrides from UI
                 "lifetime_stats": {
                     "total_sessions": 0,
                     "total_ml_consumed": 0.0,
@@ -132,8 +133,8 @@ class PersistentStorage:
             print(f"Error getting recent events: {e}")
             return []
     
-    def save_app_state(self, app_start_time: datetime, event_counts: Dict[str, int], bottle_weight: int = None, daily_consumed_ml: float = None, last_daily_reset: str = None):
-        """Save application state including bottle weight and daily consumption"""
+    def save_app_state(self, app_start_time: datetime, event_counts: Dict[str, int], bottle_weight: int = None, daily_consumed_ml: float = None, last_daily_reset: str = None, config_overrides: Dict[str, Any] = None):
+        """Save application state including bottle weight, daily consumption, and configuration overrides"""
         # Load existing data to preserve other fields
         existing_data = self.load_app_state()
         
@@ -160,6 +161,14 @@ class PersistentStorage:
             data["last_daily_reset"] = last_daily_reset
         elif "last_daily_reset" in existing_data:
             data["last_daily_reset"] = existing_data["last_daily_reset"]
+            
+        # Handle configuration overrides
+        if config_overrides is not None:
+            data["config_overrides"] = config_overrides
+        elif "config_overrides" in existing_data:
+            data["config_overrides"] = existing_data["config_overrides"]
+        else:
+            data["config_overrides"] = {}
             
         # Initialize lifetime stats if not present
         if "lifetime_stats" not in existing_data:
@@ -222,6 +231,7 @@ class PersistentStorage:
             "bottle_weight": None,
             "daily_consumed_ml": 0.0,
             "last_daily_reset": None,
+            "config_overrides": {},  # Configuration overrides from UI
             "lifetime_stats": {
                 "total_sessions": 0,
                 "total_ml_consumed": 0.0,

@@ -9,6 +9,8 @@ REMINDER_TIMER_MINUTES=45
 # Weight thresholds (in grams)
 MIN_WEIGHT=710
 MAX_WEIGHT=1810
+EMPTY_BOTTLE_WEIGHT=710          # Weight of empty bottle (grams)
+FULL_BOTTLE_WEIGHT=1810          # Weight when bottle is full (grams)
 EMPTY_THRESHOLD=50
 VERY_EMPTY_THRESHOLD=10
 FILL_THRESHOLD_PERCENT=10
@@ -31,4 +33,7 @@ RECALIBRATE_REMINDER_DAYS=2
 MIN_TIMER_GAP_MINUTES=1
 
 # Orientation threshold (degrees from vertical)
-ORIENTATION_THRESHOLD=10 
+ORIENTATION_THRESHOLD=10
+
+# UI Configuration
+SIMULATOR_MODE=true              # Show/hide accelerometer controls and related features 

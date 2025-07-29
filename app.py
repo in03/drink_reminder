@@ -14,21 +14,27 @@ from persistent_storage import storage
 # Load environment variables
 load_dotenv()
 
-class DrinkReminderApp:
+# Configuration class to handle settings
+class Configuration:
     def __init__(self):
-        # Configuration from .env
+        # Load from environment variables first, then check local storage for overrides
+        self._load_from_env()
+        self._load_from_storage()
+    
+    def _load_from_env(self):
+        """Load configuration from environment variables"""
         self.reminder_timer_minutes = int(os.getenv('REMINDER_TIMER_MINUTES', 45))
-        self.drink_reminder_base = int(os.getenv('DRINK_REMINDER_BASE', 45))  # New dynamic system
-        self.drink_reminder_limit = int(os.getenv('DRINK_REMINDER_LIMIT', 10))  # New dynamic system
-        
-        # Dynamic intervals for other reminders
-        self.bad_orientation_base = int(os.getenv('BAD_ORIENTATION_BASE', 10))  # Base interval for orientation reminders
-        self.bad_orientation_limit = int(os.getenv('BAD_ORIENTATION_LIMIT', 2))  # Min interval for urgent orientation reminders
-        self.empty_reminder_base = int(os.getenv('EMPTY_REMINDER_BASE', 10))  # Base interval for empty reminders
-        self.empty_reminder_limit = int(os.getenv('EMPTY_REMINDER_LIMIT', 2))  # Min interval for urgent empty reminders
+        self.drink_reminder_base = int(os.getenv('DRINK_REMINDER_BASE', 45))
+        self.drink_reminder_limit = int(os.getenv('DRINK_REMINDER_LIMIT', 10))
+        self.bad_orientation_base = int(os.getenv('BAD_ORIENTATION_BASE', 10))
+        self.bad_orientation_limit = int(os.getenv('BAD_ORIENTATION_LIMIT', 2))
+        self.empty_reminder_base = int(os.getenv('EMPTY_REMINDER_BASE', 10))
+        self.empty_reminder_limit = int(os.getenv('EMPTY_REMINDER_LIMIT', 2))
         self.random_threshold_minutes = int(os.getenv('RANDOM_THRESHOLD_MINUTES', 5))
         self.min_weight = int(os.getenv('MIN_WEIGHT', 710))
         self.max_weight = int(os.getenv('MAX_WEIGHT', 1810))
+        self.empty_bottle_weight = int(os.getenv('EMPTY_BOTTLE_WEIGHT', 710))
+        self.full_bottle_weight = int(os.getenv('FULL_BOTTLE_WEIGHT', 1810))
         self.empty_threshold = int(os.getenv('EMPTY_THRESHOLD', 50))
         self.very_empty_threshold = int(os.getenv('VERY_EMPTY_THRESHOLD', 10))
         self.fill_threshold_percent = int(os.getenv('FILL_THRESHOLD_PERCENT', 10))
@@ -42,12 +48,102 @@ class DrinkReminderApp:
         self.hydration_start_hour = int(os.getenv('HYDRATION_START_HOUR', 7))
         self.hydration_end_hour = int(os.getenv('HYDRATION_END_HOUR', 22))
         self.reasonable_ml_per_hour = int(os.getenv('REASONABLE_ML_PER_HOUR', 130))
+        self.simulator_mode = os.getenv('SIMULATOR_MODE', 'true').lower() == 'true'
+        self.praise_window_minutes = float(os.getenv('PRAISE_WINDOW_MINUTES', 1.0))
+    
+    def _load_from_storage(self):
+        """Load configuration overrides from local storage"""
+        try:
+            app_state = storage.load_app_state()
+            config_overrides = app_state.get('config_overrides', {})
+            
+            # Apply overrides if they exist
+            for key, value in config_overrides.items():
+                if hasattr(self, key):
+                    # Convert to appropriate type based on current value
+                    current_value = getattr(self, key)
+                    if isinstance(current_value, bool):
+                        setattr(self, key, bool(value))
+                    elif isinstance(current_value, int):
+                        setattr(self, key, int(value))
+                    elif isinstance(current_value, float):
+                        setattr(self, key, float(value))
+                    else:
+                        setattr(self, key, value)
+                    
+            print(f"🔧 Loaded {len(config_overrides)} configuration overrides from storage")
+        except Exception as e:
+            print(f"Warning: Could not load configuration overrides: {e}")
+    
+    def save_to_storage(self):
+        """Save current configuration to local storage"""
+        try:
+            # Get all configuration values that differ from defaults
+            config_overrides = {}
+            
+            # Create a fresh config instance to compare against
+            default_config = Configuration.__new__(Configuration)
+            default_config._load_from_env()
+            
+            # Compare current values with defaults and save differences
+            for attr in dir(self):
+                if not attr.startswith('_') and hasattr(default_config, attr):
+                    current_value = getattr(self, attr)
+                    default_value = getattr(default_config, attr)
+                    if current_value != default_value:
+                        config_overrides[attr] = current_value
+            
+            # Save to storage
+            app_state = storage.load_app_state()
+            app_state['config_overrides'] = config_overrides
+            
+            # Save with current time and event counts
+            from time_service import time_service
+            current_time = time_service.get_accurate_time()
+            # We need access to event_manager, so this will be called from the app
+            
+            print(f"🔧 Saved {len(config_overrides)} configuration overrides to storage")
+            return config_overrides
+        except Exception as e:
+            print(f"Error saving configuration to storage: {e}")
+            return {}
+
+class DrinkReminderApp:
+    def __init__(self):
+        # Initialize configuration
+        self.config = Configuration()
+        
+        # Use configuration values instead of direct environment variables
+        self.reminder_timer_minutes = self.config.reminder_timer_minutes
+        self.drink_reminder_base = self.config.drink_reminder_base
+        self.drink_reminder_limit = self.config.drink_reminder_limit
+        self.bad_orientation_base = self.config.bad_orientation_base
+        self.bad_orientation_limit = self.config.bad_orientation_limit
+        self.empty_reminder_base = self.config.empty_reminder_base
+        self.empty_reminder_limit = self.config.empty_reminder_limit
+        self.random_threshold_minutes = self.config.random_threshold_minutes
+        self.min_weight = self.config.min_weight
+        self.max_weight = self.config.max_weight
+        self.empty_threshold = self.config.empty_threshold
+        self.very_empty_threshold = self.config.very_empty_threshold
+        self.fill_threshold_percent = self.config.fill_threshold_percent
+        self.drink_correction_threshold = self.config.drink_correction_threshold
+        self.bad_orientation_interval = self.config.bad_orientation_interval
+        self.empty_reminder_interval = self.config.empty_reminder_interval
+        self.recalibrate_reminder_days = self.config.recalibrate_reminder_days
+        self.min_timer_gap_minutes = self.config.min_timer_gap_minutes
+        self.orientation_threshold = self.config.orientation_threshold
+        self.daily_goal_ml = self.config.daily_goal_ml
+        self.hydration_start_hour = self.config.hydration_start_hour
+        self.hydration_end_hour = self.config.hydration_end_hour
+        self.reasonable_ml_per_hour = self.config.reasonable_ml_per_hour
+        self.praise_window_minutes = self.config.praise_window_minutes
         
         # Application state
         self.current_weight = self.max_weight  # Start with full bottle
         self.previous_weight = self.current_weight
         
-        # Load bottle weight from storage, use default if not available
+        # Load bottle weight from storage, use config if not available
         self._load_bottle_weight()
         self.accelerometer = {'x': 0, 'y': 0, 'z': 1}  # Start vertical (gravity down)
         self.is_empty_state = False
@@ -62,8 +158,16 @@ class DrinkReminderApp:
         
         if saved_reset_date:
             try:
-                self.last_daily_reset = datetime.fromisoformat(saved_reset_date).date()
-            except:
+                # Handle both date strings (YYYY-MM-DD) and datetime strings
+                if 'T' in saved_reset_date:
+                    # Full datetime string
+                    self.last_daily_reset = datetime.fromisoformat(saved_reset_date).date()
+                else:
+                    # Date string only
+                    from datetime import date
+                    self.last_daily_reset = date.fromisoformat(saved_reset_date)
+            except Exception as e:
+                print(f"⚠️ Error parsing saved reset date '{saved_reset_date}': {e}")
                 from datetime import datetime
                 self.last_daily_reset = datetime.now().date()
         else:
@@ -77,6 +181,7 @@ class DrinkReminderApp:
         current_date = datetime.now().date()
         if current_date != self.last_daily_reset:
             print(f"🌅 Startup daily reset needed: {self.last_daily_reset} -> {current_date}")
+            self._check_daily_reset()
         
         self.reminder_window_start = None  # Track when current reminder window started
         self.cumulative_hif_window = []  # Track drinks within current reminder window for cumulative HIF
@@ -98,7 +203,6 @@ class DrinkReminderApp:
         }
         
         # Praise system configuration
-        self.praise_window_minutes = float(os.getenv('PRAISE_WINDOW_MINUTES', 1.0))
         self.praise_window_drinks = []  # Track drinks within praise window
         
         # Initialize time service and storage
@@ -111,7 +215,7 @@ class DrinkReminderApp:
         # Data refresh task will be started when UI is created
     
     def _load_bottle_weight(self):
-        """Load bottle weight from storage, use default if not available"""
+        """Load bottle weight from storage, use config default if not available"""
         try:
             app_state = storage.load_app_state()
             saved_bottle_weight = app_state.get('bottle_weight')
@@ -120,12 +224,86 @@ class DrinkReminderApp:
                 self.bottle_weight = saved_bottle_weight
                 print(f"🔧 Loaded bottle weight from storage: {self.bottle_weight}g")
             else:
-                self.bottle_weight = self.min_weight
-                print(f"🔧 Using default bottle weight: {self.bottle_weight}g (no saved weight found)")
+                self.bottle_weight = self.config.empty_bottle_weight
+                print(f"🔧 Using config default bottle weight: {self.bottle_weight}g (no saved weight found)")
         except Exception as e:
-            print(f"❌ Error loading bottle weight: {e}, using default: {self.min_weight}g")
-            self.bottle_weight = self.min_weight
+            print(f"❌ Error loading bottle weight: {e}, using config default: {self.config.empty_bottle_weight}g")
+            self.bottle_weight = self.config.empty_bottle_weight
     
+    def save_config_to_storage(self):
+        """Save current configuration to storage"""
+        try:
+            config_overrides = self.config.save_to_storage()
+            
+            # Also save the overrides with current app state
+            current_time = time_service.get_accurate_time()
+            
+            # Ensure last_daily_reset is properly formatted
+            reset_date_str = None
+            if self.last_daily_reset is not None:
+                if hasattr(self.last_daily_reset, 'isoformat') and callable(getattr(self.last_daily_reset, 'isoformat', None)):
+                    reset_date_str = self.last_daily_reset.isoformat()
+                else:
+                    reset_date_str = str(self.last_daily_reset)
+            else:
+                from datetime import date
+                reset_date_str = date.today().isoformat()
+            
+            storage.save_app_state(
+                current_time, 
+                self.event_manager.event_counts, 
+                self.bottle_weight,
+                self.daily_consumed_ml,
+                reset_date_str,
+                config_overrides
+            )
+            
+            print(f"🔧 Configuration saved to storage")
+            return True
+        except Exception as e:
+            print(f"❌ Error saving configuration: {e}")
+            return False
+    
+    def update_config_from_ui(self, new_config):
+        """Update configuration from UI inputs"""
+        try:
+            # Update configuration object
+            for key, value in new_config.items():
+                if hasattr(self.config, key):
+                    setattr(self.config, key, value)
+                    # Also update the app instance for immediate effect
+                    if hasattr(self, key):
+                        setattr(self, key, value)
+            
+            # Update weight bounds if they changed
+            if 'empty_bottle_weight' in new_config:
+                self.min_weight = self.config.empty_bottle_weight
+            if 'full_bottle_weight' in new_config:
+                self.max_weight = self.config.full_bottle_weight
+                
+            # Update UI elements if they exist
+            if hasattr(self, 'weight_slider'):
+                self.weight_slider.min = self.min_weight
+                self.weight_slider.max = self.max_weight
+                self.weight_slider.update()
+            
+            # Save to storage
+            self.save_config_to_storage()
+            
+            # Update timers if interval-related configs changed
+            timer_related_configs = ['drink_reminder_base', 'drink_reminder_limit', 'bad_orientation_base', 
+                                   'bad_orientation_limit', 'empty_reminder_base', 'empty_reminder_limit']
+            if any(key in new_config for key in timer_related_configs):
+                self._update_reminder_timer_interval()
+                self._update_empty_reminder_timer_interval()
+                self._update_bad_orientation_timer_interval()
+            
+            print(f"🔄 Configuration updated: {list(new_config.keys())}")
+            return True
+        except Exception as e:
+            print(f"❌ Error updating configuration: {e}")
+            return False
+
     def _start_data_refresh_task(self):
         """Start the periodic data refresh task for reactive UI updates"""
         # Don't start if already running
@@ -137,12 +315,17 @@ class DrinkReminderApp:
                 while True:
                     self._update_ui_data()
                     
-                    # Update lifetime stats display every 10 seconds
+                    # Update counters
                     if hasattr(self, '_refresh_counter'):
                         self._refresh_counter += 1
                     else:
                         self._refresh_counter = 0
                     
+                    # Check for daily reset every 60 seconds (sufficient for midnight detection)
+                    if self._refresh_counter % 60 == 0:
+                        self._check_daily_reset()
+                    
+                    # Update lifetime stats display every 10 seconds
                     if self._refresh_counter % 10 == 0:  # Every 10 seconds
                         self._update_lifetime_stats_display()
                     
@@ -186,9 +369,15 @@ class DrinkReminderApp:
         
         self.ui_data['weight_display'] = f'Total: {self.current_weight}g | Drink: {drink_grams:.0f}g ({drink_percent:.1f}%) | Daily: {self.daily_consumed_ml:.0f}/{self.daily_goal_ml}ml ({daily_progress:.1f}%){time_status}{urgency_indicator}{reminder_info}'
         
-        # Update status display
-        orientation_status = "✅ Vertical" if self._is_bottle_vertical() else "⚠️ Tilted"
+        # Update status display - conditionally show orientation based on simulator mode
+        status_parts = []
+        
+        if self.config.simulator_mode:
+            orientation_status = "✅ Vertical" if self._is_bottle_vertical() else "⚠️ Tilted"
+            status_parts.append(orientation_status)
+        
         empty_status = "🚨 Empty" if self.is_empty_state else "💧 Has Drink"
+        status_parts.append(empty_status)
         
         # Enhanced dehydration status with new dehydration level system
         dehydration_level = self._calculate_dehydration_level()
@@ -214,7 +403,8 @@ class DrinkReminderApp:
             else:
                 dehydration_status = f"🚨 Severe Dehydration (Level: {dehydration_level:.1f})"
         
-        self.ui_data['status_display'] = f'{orientation_status} | {empty_status} | {dehydration_status}'
+        status_parts.append(dehydration_status)
+        self.ui_data['status_display'] = ' | '.join(status_parts)
         
         # Update event log
         recent_events = self.event_manager.events[-10:]
@@ -1299,6 +1489,10 @@ Avg per Day: {stats['total_ml_consumed'] / max(1, stats['days_tracked']):.0f}ml
         current_time = time_service.get_accurate_time()
         
         for name, timer in self.timer_manager.timers.items():
+            # Skip simulator-only timers if simulator mode is disabled
+            if not self.config.simulator_mode and name in ['bad_orientation', 'empty_reminder']:
+                continue
+                
             status = "🟢 ACTIVE" if timer.is_active else "🔴 INACTIVE"
             
             if timer.next_trigger_time and timer.is_active:
@@ -1381,12 +1575,213 @@ Avg per Day: {stats['total_ml_consumed'] / max(1, stats['days_tracked']):.0f}ml
         except Exception as e:
             print(f"Error updating timer panel: {e}")
             
+    def create_settings_modal(self):
+        """Create the settings configuration modal"""
+        with ui.dialog() as settings_dialog, ui.card().classes('w-full max-w-4xl mx-auto p-6'):
+            ui.label('⚙️ Configuration Settings').classes('text-2xl font-bold mb-6')
+            
+            # Store current config values for the modal
+            current_config = {}
+            
+            with ui.column().classes('w-full gap-4'):
+                # UI Configuration Section
+                with ui.expansion('🖥️ UI Configuration', icon='display_settings').classes('w-full'):
+                    with ui.column().classes('gap-4 p-4'):
+                        simulator_mode_switch = ui.switch('Simulator Mode', 
+                                                        value=self.config.simulator_mode).classes('mb-2')
+                        ui.label('When disabled, hides accelerometer controls and related features from the UI').classes('text-sm text-gray-600')
+                        current_config['simulator_mode'] = simulator_mode_switch
+                
+                # Bottle Weight Configuration Section
+                with ui.expansion('⚖️ Bottle Weight Configuration', icon='scale').classes('w-full'):
+                    with ui.column().classes('gap-4 p-4'):
+                        with ui.row().classes('w-full gap-4'):
+                            with ui.column().classes('flex-1'):
+                                ui.label('Empty Bottle Weight (g)').classes('text-sm font-medium mb-1')
+                                empty_weight_input = ui.number(value=self.config.empty_bottle_weight,
+                                                             min=100, max=2000, step=1).classes('w-full')
+                            with ui.column().classes('flex-1'):
+                                ui.label('Full Bottle Weight (g)').classes('text-sm font-medium mb-1')
+                                full_weight_input = ui.number(value=self.config.full_bottle_weight,
+                                                            min=500, max=3000, step=1).classes('w-full')
+                        current_config['empty_bottle_weight'] = empty_weight_input
+                        current_config['full_bottle_weight'] = full_weight_input
+                
+                # Daily Hydration Goals Section
+                with ui.expansion('💧 Daily Hydration Goals', icon='local_drink').classes('w-full'):
+                    with ui.column().classes('gap-4 p-4'):
+                        with ui.row().classes('w-full gap-4'):
+                            with ui.column().classes('flex-1'):
+                                ui.label('Daily Goal (ml)').classes('text-sm font-medium mb-1')
+                                daily_goal_input = ui.number(value=self.config.daily_goal_ml,
+                                                           min=1000, max=5000, step=100).classes('w-full')
+                            with ui.column().classes('flex-1'):
+                                ui.label('Target Rate (ml/hour)').classes('text-sm font-medium mb-1')
+                                reasonable_rate_input = ui.number(value=self.config.reasonable_ml_per_hour,
+                                                                min=50, max=300, step=10).classes('w-full')
+                        with ui.row().classes('w-full gap-4'):
+                            with ui.column().classes('flex-1'):
+                                ui.label('Hydration Start Hour (24h)').classes('text-sm font-medium mb-1')
+                                start_hour_input = ui.number(value=self.config.hydration_start_hour,
+                                                           min=0, max=23, step=1).classes('w-full')
+                            with ui.column().classes('flex-1'):
+                                ui.label('Hydration End Hour (24h)').classes('text-sm font-medium mb-1')
+                                end_hour_input = ui.number(value=self.config.hydration_end_hour,
+                                                         min=1, max=24, step=1).classes('w-full')
+                        current_config['daily_goal_ml'] = daily_goal_input
+                        current_config['reasonable_ml_per_hour'] = reasonable_rate_input
+                        current_config['hydration_start_hour'] = start_hour_input
+                        current_config['hydration_end_hour'] = end_hour_input
+                
+                # Timer Configuration Section
+                with ui.expansion('⏰ Timer Configuration', icon='timer').classes('w-full'):
+                    with ui.column().classes('gap-4 p-4'):
+                        ui.label('Drink Reminder Timer (Dynamic)').classes('font-semibold')
+                        with ui.row().classes('w-full gap-4'):
+                            with ui.column().classes('flex-1'):
+                                ui.label('Base Interval (min)').classes('text-sm font-medium mb-1')
+                                drink_base_input = ui.number(value=self.config.drink_reminder_base,
+                                                           min=15, max=120, step=5).classes('w-full')
+                            with ui.column().classes('flex-1'):
+                                ui.label('Urgent Limit (min)').classes('text-sm font-medium mb-1')
+                                drink_limit_input = ui.number(value=self.config.drink_reminder_limit,
+                                                            min=5, max=60, step=5).classes('w-full')
+                        
+                        ui.separator().classes('my-4')
+                        
+                        with ui.row().classes('w-full gap-4'):
+                            with ui.column().classes('flex-1'):
+                                ui.label('Random Threshold (min)').classes('text-sm font-medium mb-1')
+                                random_threshold_input = ui.number(value=self.config.random_threshold_minutes,
+                                                                 min=0, max=15, step=1).classes('w-full')
+                            with ui.column().classes('flex-1'):
+                                ui.label('Min Timer Gap (min)').classes('text-sm font-medium mb-1')
+                                min_gap_input = ui.number(value=self.config.min_timer_gap_minutes,
+                                                        min=1, max=10, step=1).classes('w-full')
+                        
+                        current_config['drink_reminder_base'] = drink_base_input
+                        current_config['drink_reminder_limit'] = drink_limit_input
+                        current_config['random_threshold_minutes'] = random_threshold_input
+                        current_config['min_timer_gap_minutes'] = min_gap_input
+                
+                # Thresholds Configuration Section
+                with ui.expansion('🚨 Detection Thresholds', icon='warning').classes('w-full'):
+                    with ui.column().classes('gap-4 p-4'):
+                        with ui.row().classes('w-full gap-4'):
+                            with ui.column().classes('flex-1'):
+                                ui.label('Empty Threshold (g)').classes('text-sm font-medium mb-1')
+                                empty_threshold_input = ui.number(value=self.config.empty_threshold,
+                                                                min=10, max=200, step=5).classes('w-full')
+                            with ui.column().classes('flex-1'):
+                                ui.label('Very Empty Threshold (g)').classes('text-sm font-medium mb-1')
+                                very_empty_input = ui.number(value=self.config.very_empty_threshold,
+                                                           min=1, max=50, step=1).classes('w-full')
+                        with ui.row().classes('w-full gap-4'):
+                            with ui.column().classes('flex-1'):
+                                ui.label('Orientation Threshold (degrees)').classes('text-sm font-medium mb-1')
+                                orientation_input = ui.number(value=self.config.orientation_threshold,
+                                                            min=5, max=45, step=5).classes('w-full')
+                            with ui.column().classes('flex-1'):
+                                ui.label('Fill Threshold (%)').classes('text-sm font-medium mb-1')
+                                fill_percent_input = ui.number(value=self.config.fill_threshold_percent,
+                                                             min=5, max=25, step=5).classes('w-full')
+                        
+                        current_config['empty_threshold'] = empty_threshold_input
+                        current_config['very_empty_threshold'] = very_empty_input
+                        current_config['orientation_threshold'] = orientation_input
+                        current_config['fill_threshold_percent'] = fill_percent_input
+                
+                # Reset Options Section (moved from Status)
+                with ui.expansion('🔄 Reset Options', icon='refresh').classes('w-full'):
+                    with ui.column().classes('gap-4 p-4'):
+                        ui.label('Reset current session data:').classes('text-sm mb-2')
+                        with ui.row().classes('w-full gap-2'):
+                            ui.button('Reset Session (Keep Lifetime Stats)', 
+                                     on_click=lambda: asyncio.create_task(self.reset_session_data(preserve_lifetime_stats=True))
+                                     ).classes('flex-1 bg-orange-500')
+                            ui.button('Complete Reset (All Data)', 
+                                     on_click=lambda: asyncio.create_task(self.reset_session_data(preserve_lifetime_stats=False))
+                                     ).classes('flex-1 bg-red-600')
+                        ui.label('⚠️ Use reset if you notice incorrect hydration levels or accumulated errors.').classes('text-xs text-gray-500 mt-2')
+            
+            # Modal buttons
+            with ui.row().classes('w-full justify-end gap-4 mt-6'):
+                ui.button('Cancel', on_click=settings_dialog.close).classes('bg-gray-500')
+                
+                async def save_settings():
+                    try:
+                        # Collect all config values
+                        new_config = {}
+                        for key, input_element in current_config.items():
+                            new_config[key] = input_element.value
+                        
+                        # Update configuration
+                        success = self.update_config_from_ui(new_config)
+                        
+                        if success:
+                            await self._show_toast('✅ Configuration saved successfully!', 'positive')
+                            settings_dialog.close()
+                            
+                            # Refresh UI if simulator mode changed
+                            if 'simulator_mode' in new_config:
+                                await self._update_simulator_mode_visibility()
+                        else:
+                            await self._show_toast('❌ Failed to save configuration', 'negative')
+                    except Exception as e:
+                        await self._show_toast(f'❌ Error saving settings: {e}', 'negative')
+                
+                ui.button('Save', on_click=save_settings).classes('bg-blue-600')
+        
+        return settings_dialog
+    
+    async def _update_simulator_mode_visibility(self):
+        """Update visibility of simulator mode elements"""
+        try:
+            is_simulator = self.config.simulator_mode
+            
+            # Update accelerometer card visibility
+            if hasattr(self, 'accelerometer_card'):
+                if is_simulator:
+                    self.accelerometer_card.style('display: block')
+                else:
+                    self.accelerometer_card.style('display: none')
+            
+            # Update app title
+            if hasattr(self, 'app_title_label'):
+                app_title = '🍺 Drink Reminder Simulator' if is_simulator else '🍺 Drink Reminder'
+                self.app_title_label.text = app_title
+            
+            # Update page title using JavaScript since ui.page_title() doesn't work dynamically
+            await ui.run_javascript(f'document.title = "{("Drink Reminder Simulator" if is_simulator else "Drink Reminder")}"')
+            
+            # Force update UI data to refresh status display
+            self._update_ui_data()
+            
+            # Force update timer panel to show/hide simulator timers
+            await self._update_timer_panel()
+            
+            print(f"🔄 Simulator mode visibility updated: {is_simulator}")
+        except Exception as e:
+            print(f"Error updating simulator mode visibility: {e}")
+
+
+
     def create_ui(self):
         """Create the main UI"""
-        ui.page_title('Drink Reminder Simulator')
+        # Set initial page title based on simulator mode
+        page_title = 'Drink Reminder Simulator' if self.config.simulator_mode else 'Drink Reminder'
+        ui.page_title(page_title)
         
         with ui.card().classes('w-full max-w-6xl mx-auto p-6'):
-            ui.label('🍺 Drink Reminder Simulator').classes('text-3xl font-bold text-center mb-6')
+            # Header with settings button
+            with ui.row().classes('w-full items-center justify-between mb-6'):
+                # Make app title reactive to simulator mode
+                app_title = '🍺 Drink Reminder Simulator' if self.config.simulator_mode else '🍺 Drink Reminder'
+                self.app_title_label = ui.label(app_title).classes('text-3xl font-bold')
+                
+                # Settings button
+                settings_dialog = self.create_settings_modal()
+                ui.button('⚙️', on_click=settings_dialog.open).props('flat round size=md').classes('ml-auto')
             
             # Responsive two-column layout
             with ui.row().classes('w-full gap-6'):
@@ -1412,8 +1807,9 @@ Avg per Day: {stats['total_ml_consumed'] / max(1, stats['days_tracked']):.0f}ml
                         self.weight_display = ui.label().classes('text-lg font-mono')
                         self.weight_display.bind_text_from(self.ui_data, 'weight_display')
                     
-                    # Accelerometer Controls  
-                    with ui.card().classes('mb-4 p-4'):
+                    # Accelerometer Controls (conditionally shown based on simulator mode)
+                    self.accelerometer_card = ui.card().classes('mb-4 p-4')
+                    with self.accelerometer_card:
                         ui.label('📱 Accelerometer Orientation').classes('text-xl font-semibold mb-4')
                         
                         # X-Axis Control
@@ -1454,6 +1850,10 @@ Avg per Day: {stats['total_ml_consumed'] / max(1, stats['days_tracked']):.0f}ml
                         
                         # Reset All Button
                         ui.button('Reset All to Vertical', on_click=lambda: self._reset_all_axes(x_slider, y_slider, z_slider)).classes('w-full mt-2 bg-blue-500')
+                    
+                    # Apply simulator mode visibility
+                    if not self.config.simulator_mode:
+                        self.accelerometer_card.style('display: none')
                 
                 # Right Column - Status and Events
                 with ui.column().classes('flex-1 min-w-0'):
@@ -1473,18 +1873,6 @@ Avg per Day: {stats['total_ml_consumed'] / max(1, stats['days_tracked']):.0f}ml
                         with ui.expansion('📊 Lifetime Statistics', icon='analytics').classes('w-full mt-4'):
                             self.lifetime_stats_label = ui.label().classes('text-sm')
                             self._update_lifetime_stats_display()
-                        
-                        # Reset Controls
-                        with ui.expansion('🔄 Reset Options', icon='refresh').classes('w-full mt-4'):
-                            ui.label('Reset current session data:').classes('text-sm mb-2')
-                            with ui.row().classes('w-full gap-2'):
-                                ui.button('Reset Session (Keep Lifetime Stats)', 
-                                         on_click=lambda: asyncio.create_task(self.reset_session_data(preserve_lifetime_stats=True))
-                                         ).classes('flex-1 bg-orange-500')
-                                ui.button('Complete Reset (All Data)', 
-                                         on_click=lambda: asyncio.create_task(self.reset_session_data(preserve_lifetime_stats=False))
-                                         ).classes('flex-1 bg-red-600')
-                            ui.label('⚠️ Use reset if you notice incorrect hydration levels or accumulated errors.').classes('text-xs text-gray-500 mt-2')
                     
                     # Timer Panel
                     with ui.card().classes('mb-4 p-4'):
