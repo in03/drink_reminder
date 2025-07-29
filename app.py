@@ -10,6 +10,7 @@ from event_manager import EventManager, Event
 from timer_manager import TimerManager
 from time_service import time_service
 from persistent_storage import storage
+from audio_service import audio_service
 
 # Load environment variables
 load_dotenv()
@@ -964,6 +965,9 @@ class DrinkReminderApp:
         
         # Log message instead of showing toast from background task
         print(f"DRINK REMINDER: {reminder_message}")
+        
+        # Play audio cue for drink reminder
+        await audio_service.play_drink_reminder_audio(severity_level)
     
     def _calculate_cumulative_hif(self, amount_consumed_ml: float) -> float:
         """Calculate cumulative hydration improvement factor based on amount consumed, dehydration severity, and time urgency."""
@@ -1167,6 +1171,9 @@ class DrinkReminderApp:
         
         # Show hydration message
         await self._show_toast(f"{message} (Factor: {improvement_factor:.1f})", message_type)
+        
+        # Play audio cue for praise
+        await audio_service.play_praise_audio(improvement_factor)
         
         return event
     
@@ -1805,6 +1812,37 @@ Avg per Day: {stats['total_ml_consumed'] / max(1, stats['days_tracked']):.0f}ml
                         current_config['orientation_threshold'] = orientation_input
                         current_config['fill_threshold_percent'] = fill_percent_input
                 
+                # Audio System Section
+                with ui.expansion('🔊 Audio System', icon='volume_up').classes('w-full'):
+                    with ui.column().classes('gap-4 p-4'):
+                        audio_stats = audio_service.get_audio_stats()
+                        
+                        # Display audio statistics
+                        with ui.row().classes('w-full gap-4'):
+                            for category, stats in audio_stats.items():
+                                with ui.card().classes('flex-1 p-3'):
+                                    category_display = category.replace('_', ' ').title()
+                                    ui.label(f'🎵 {category_display}').classes('text-lg font-semibold mb-2')
+                                    
+                                    if stats['total_files'] > 0:
+                                        ui.label(f"Files: {stats['total_files']} ({stats['level_range']})").classes('text-sm')
+                                        ui.label(f"Max variants: {stats['max_variants']}").classes('text-sm')
+                                        ui.label(f"Levels: {', '.join(map(str, stats['levels']))}").classes('text-xs text-gray-600')
+                                    else:
+                                        ui.label('No audio files found').classes('text-sm text-orange-500')
+                        
+                        # Severity mapping explanation
+                        ui.label('📊 Severity Mapping').classes('text-lg font-semibold mb-2 mt-4')
+                        with ui.row().classes('w-full gap-4'):
+                            with ui.card().classes('flex-1 p-3'):
+                                ui.label('Drink Reminders').classes('font-semibold mb-2')
+                                ui.label('Severity 1-30 → Audio s1-s5').classes('text-sm')
+                                ui.label('Higher dehydration = higher audio level').classes('text-xs text-gray-600')
+                            with ui.card().classes('flex-1 p-3'):
+                                ui.label('Praise Messages').classes('font-semibold mb-2')
+                                ui.label('Factor 0.0-6.0 → Audio s1-s5').classes('text-sm')
+                                ui.label('Better hydration = higher praise level').classes('text-xs text-gray-600')
+
                 # Reset Options Section (moved from Status)
                 with ui.expansion('🔄 Reset Options', icon='refresh').classes('w-full'):
                     with ui.column().classes('gap-4 p-4'):
